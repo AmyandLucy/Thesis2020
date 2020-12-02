@@ -1,0 +1,401 @@
+---
+title: "Categorised Analysis"
+author: "Lucy"
+date: "05/09/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Setting up 
+
+## Installing packages 
+```{r}
+# Install packages 
+install.packages(c('lme4', 'lmerTest', 'tidyverse', 'readr', 'sjstats', 'ggplot2', 'dplyr','plotly'))
+```
+
+```{r}
+# library packages
+library('lme4')
+library('lmerTest')
+library('tidyverse')
+library('readr')
+library('sjstats')
+library('ggplot2')
+library('dplyr')
+library('plotly')
+```
+
+## Read Data
+```{r}
+pre.data <- read.csv("categorised_pre_data.csv")
+#pre.data <- categorised_data_final
+```
+
+# Data cleaning
+```{r}
+# Assigning binary categorisation  
+  for(i in seq_along(pre.data$decision)){
+    if (pre.data$decision[i] == "1" | pre.data$decision[i] == "2"){
+      pre.data$categorisation[i] <- 0 #Central = 0
+    } else if (pre.data$decision[i] == "3" | pre.data$decision[i] == "4"){
+      pre.data$categorisation[i] <- 1 #Peripheral = 1
+    }
+  }
+
+view(pre.data)
+
+# Removing rows with NA for error 
+pre.data <- pre.data[complete.cases(pre.data[,23]),]
+```
+
+##Rescale year variable
+```{r}
+pre.data$year <- pre.data$realYear - 1998
+```
+
+# The Data
+
+## Descriptives 
+```{r}
+summary(pre.data)
+```
+
+## Years
+```{r}
+dplyr::count(pre.data, realYear)
+```
+
+## Journals
+```{r}
+dplyr::count(pre.data, journalID)
+```
+
+## Articles
+```{r}
+dplyr::count(pre.data, PMCID)
+```
+
+## Contingency table 
+```{r}
+# Proportion of Statistical Reporting Error for all NHSTs
+overrall.error <- prop.table(table(pre.data$error))
+print("Proportion of Statistical Reporting Error for all NHSTs")
+overrall.error
+
+overrall.gross.error <- prop.table(table(pre.data$decisionError))
+print("Proportion of Gross Statistical Reporting Error for all NHSTs")
+overrall.gross.error
+
+# Proportion of Statistical Reporting Error for each category
+summary.error <- prop.table(table(pre.data$categorisation, pre.data$error)) #prop.table turns raw frequency to proportions
+
+summary.decisionError <- prop.table(table(pre.data$categorisation, pre.data$decisionError))
+
+print("Proportion of Statistical Reporting Error for all NHSTs by Test Categorisation")
+print(summary.error)
+print("Proportion of Gorss Statistical Reporting Error for all NHSTs by Test Categorisation")
+print(summary.decisionError)
+```
+Percentage of statistical reporting errors in central tests- 11.27%
+Percentage of statistical reporting errors in peripheral tests- 3%
+
+## Proportion of Statistical Reporting Error per Article 
+```{r}
+errorData <- subset(pre.data, error == TRUE)
+article.error <- plyr::count(errorData, 'PMCID') 
+n_article.error <- as.integer(nrow(article.error))
+n_article.error
+
+article.total <- dplyr::count(pre.data, PMCID)  
+n_article.total <- as.integer(nrow(article.total))
+n_article.total
+
+article.error.prop <- n_article.error/n_article.total
+article.error.prop
+```
+
+## Proportion of Gross Statistical Reporting Error per Article 
+```{r}
+gross.errorData <- subset(pre.data, decisionError == TRUE)
+gross.article.error <- plyr::count(gross.errorData, 'PMCID') 
+n_gross.article.error <- as.integer(nrow(gross.article.error))
+n_gross.article.error
+
+#calculate the proportion
+gross.article.error.prop <- n_gross.article.error/n_article.total
+gross.article.error.prop
+```
+
+## Proportion of test categories
+```{r}
+table(pre.data$categorisation)
+prop.table(table(pre.data$categorisation))
+```
+
+##Proportion of errors in Central Tests
+```{r}
+centraltest <- subset(pre.data, categorisation == 0)
+nrow(centraltest)
+table(centraltest$error)
+prop.table(table(centraltest$error))
+```
+
+## Proportion of errors in Peripheral Tests
+```{r}
+peritest <- subset(pre.data, categorisation == 1)
+nrow(peritest)
+table(peritest$error)
+prop.table(table(peritest$error))
+```
+
+###Descriptive Results
+```{r}
+# Proportion of Test statistic type
+test.stat <- prop.table(table(pre.data$statistic))
+test.stat
+
+test.stat.cat <- prop.table(table(pre.data$statistic, pre.data$categorisation))
+test.stat.cat
+```
+
+
+## Plotting Data
+
+## Themes
+```{r}
+install.packages("ggsci")
+library("ggsci")
+```
+
+### Percentage of Errors over the years (Central vs Peripheral)
+```{r}
+# Want a graph of number of Statistical Reporting Error against year for central vs peripheral  
+
+#Look at just errors 
+outsummary <- table(pre.data$error, pre.data$realYear, pre.data$categorisation)
+outsummary <- as.data.frame(outsummary)
+colnames(outsummary) = c("error", "year", "categorisation", "Freq")
+outpercent = as.data.frame(group_by(outsummary, year, categorisation) %>%
+  mutate(percent = Freq/sum(Freq)*100))
+
+outpercent
+
+#look at just errors
+graphdata = subset(outpercent, error == TRUE) 
+
+#calculate CIs to add to graph
+graphdata$sample = as.data.frame(table(pre.data$realYear, pre.data$categorisation))$Freq
+graphdata$SE = sqrt(graphdata$percent*(100-graphdata$percent)/graphdata$sample)
+
+#make the ggplot
+dataplot = ggplot(graphdata, aes(year, percent, colour = categorisation))
+dataplot = dataplot +
+  geom_pointrange(aes(ymin=percent-1.96*SE, ymax=percent+1.96*SE)) + 
+  xlab("Year") +
+  ylab("Percent of Errors") + 
+  theme(axis.text.x = element_text(angle = 60, hjust = 1)) +
+  scale_color_manual(name = "Categorisation", 
+                     labels = c("Focal", "Non-focal"), 
+                     values = c("#374E55FF", "#DF8F44FF")) + 
+  coord_cartesian(ylim = c(0,75)) +
+  theme(panel.border = element_blank(), panel.grid.major = element_blank(),
+panel.grid.minor = element_blank(), axis.line = element_line(colour = "black"), panel.background = element_blank())
+
+dataplot
+```
+
+### Number of articles over the years
+```{r}
+graph1 <- ggplot(data = pre.data, aes(realYear)) + 
+  geom_bar(aes(fill = factor(categorisation)), position = "dodge") + 
+  xlab("Year") +
+  ylab("Number of NHSTs") +
+  scale_x_continuous(breaks = c(1998:2018)) +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1)) +
+  scale_fill_jama(name = "Categorisation", labels = c("focal", "non-focal")) +
+  theme(panel.border = element_blank(), panel.grid.major = element_blank(),
+panel.grid.minor = element_blank(), axis.line = element_line(colour = "black"), panel.background = element_blank())
+print(graph1)
+
+```
+
+### Plotting number of errors by Article
+```{r}
+error_by_article <- pre.data %>% group_by(realYear,PMCID) %>% summarise(count = sum(error))
+error_by_article.graph <- ggplot(data = error_by_article) 
+error_by_article.graph <- error_by_article.graph +
+  geom_col(aes(x=PMCID, y=count, xlab("Article"), ylab("Frequency")))
+print(error_by_article.graph)
+```
+
+
+# Data Analysis
+
+## Base Model (with only constant)
+```{r}
+base.m <- glm("error ~ 1", 
+          family = binomial(link = "logit"),
+          data = pre.data)
+
+summary(base.m) #this is a model with only the intercept, think about whether or not the output is meaningful
+```
+
+## Main Model with Random Effect 
+```{r}
+m1 <- glmer("error ~ 1 + year + categorisation + statistic + (1 | journalID)",
+                 data = pre.data,
+                 family = binomial(link = "logit"))
+
+summary(m1)
+confint(m1, "beta_", level = 0.95,
+	method = c("profile", "Wald", "boot"),
+	nsim = 500,
+        boot.type = c("perc","basic","norm"),
+        FUN = NULL, quiet = FALSE,
+	oldNames = TRUE)
+```
+
+## This section lets you display your model's prediction for various combinations of observed variables
+
+```{r}
+
+intercept_parameter <- fixef(m1)['(Intercept)']
+year_parameter <- fixef(m1)['year']
+cat_parameter <- fixef(m1)['categorisation']
+statF_parameter <- fixef(m1)['statisticF']
+statr_parameter <- fixef(m1)['statisticr']
+statt_parameter <- fixef(m1)['statistict']
+
+
+# Edit the code section below.
+# In addition to the rules listed below, it's required that a maximum of
+# one of statF/statr/statt be equal to 1. 
+# It's permitted for all of them to equal 0, in which case the statistic
+# is chi-squared.
+
+year <- 0 # Change this to anything from 0 to 20
+cat <- 0 # Make this either 0 (focal) or 1 (nonfocal)
+statF <- 0 # Make this 0 (not F-stat) or 1 (F-stat)
+statr <- 0 # Make this 0 (not r-stat) or 1 (r-stat)
+statt <- 0 # Make this 0 (not t-stat) or 1 (t-stat)
+
+
+# Get the model's estimated probability of error
+plogis(intercept_parameter + year * year_parameter + cat * cat_parameter +
+         statF * statF_parameter + statr * statr_parameter + statt * statt_parameter)
+
+```
+
+### Median Odds Ratio
+```{r}
+var <- 0.04831 #random effect variance
+
+install.packages("remotes")
+remotes::install_github("pcdjohnson/GLMMmisc")
+library("GLMMmisc")
+
+mor(var)
+
+```
+
+# Assumptions Testing
+
+## DV Ratios
+```{r}
+print("Error Frequency")
+ratio.table <- table(pre.data$categorisation, pre.data$error)
+ratio.table
+
+print("Decision Error Frequency")
+table(pre.data$categorisation, pre.data$decisionError)
+
+# Ratio between the two outcomes of DV should be less than 10:1 otherwise a logistic regression may be problematic 
+ratio <- ratio.table[1,1]/ratio.table[1,2]
+
+print("Error Ratio")
+ratio
+```
+
+## Normal Distribution of Random Effect 
+```{r}
+install.packages("sjPlot", "sjmisc")
+
+library('sjPlot')
+library('sjmisc')
+library("car")
+
+# See https://cran.r-project.org/web/packages/sjPlot/vignettes/tab_mixed.html for more details
+the_ranefs <- getME(m1, 'b')
+qqPlot(as.numeric(the_ranefs), ylab = "Random Effects", grid = FALSE, col.lines = "#374E55FF", pch = 1, cex = 1.25)
+
+```
+
+```{r}
+
+# Checking for influence
+
+library(Influence.ME)
+test_for_influence <- influence(m1, "journalID")
+
+fixd <- test_for_influence$alt.fixed
+View(fixd)
+
+
+```
+
+
+```{r}
+
+# Calculate CI for variance of random intercept
+
+variance_random_intercepts <- profile(m1,which="theta_",prof.scale="varcov",signames=FALSE)
+confint(variance_random_intercepts)
+
+```
+
+
+```{r}
+
+# For Appendix, we have a plot of the residuals against model predictions, and also residuals against predictors
+
+library(lme4)
+library(DHARMa)
+data <- pre.data
+
+m1 <- glmer("error ~ 1 + year + categorisation + statistic + (1 | journalID)",
+                 data = data,
+                 family = binomial(link = "logit"))
+
+simulationOutput <- simulateResiduals(fittedModel = m1)
+
+# Main plot function from DHARMa, which gives 
+# Left: a qq-plot to detect overall deviations from the expected distribution
+# Right: a plot of the residuals against the rank-transformed model predictions
+plot(simulationOutput)
+
+# Plotting standardized residuals against predictors
+plotResiduals(simulationOutput, data$year, xlab = "Year", main=NULL) # The squiggly red line is called a "spline"
+plotResiduals(simulationOutput, data$statistic, xlab = "Statistic Type", main=NULL)
+plotResiduals(simulationOutput, data$categorisation, xlab = "Categorisation", main=NULL)
+
+# Plotting standardized residuals against the predicted value
+plotResiduals(simulationOutput, main=NULL)
+plotResiduals(simulationOutput, fitted(m1), xlab = "fitted(m1)")
+
+```
+
+
+# Calculate the median odds ratio
+
+```{r}
+
+v <- as.data.frame(VarCorr(m1))[4]
+mor=exp(sqrt(2*v)*qnorm(0.75))
+
+```
+
+
