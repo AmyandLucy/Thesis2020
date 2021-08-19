@@ -76,13 +76,13 @@ CatNullICC <- performance::icc(CatNullModel)
 
 # Running my real equation
 
-CatModel <- lmer("FisherZScores ~ 1 + realYearStart0 + statistic + DecisionBinary + (1 | journalID)", data = categorised)
+CatModel <- lmer("FisherZScores ~ 1 + realYearStart0 + statistic + realYearStart0 * DecisionBinary + (1 | journalID)", data = categorised)
 
 summary(CatModel)
 
-confint(CatModel, "beta_", level = 0.95,
-	method = c("boot"),
-	nsim = 500,
+confint(FixedCatModel, "beta_", level = 0.95,
+	method = c("profile", "Wald", "boot"),
+	nsim = 1000,
         boot.type = c("perc","basic","norm"),
         FUN = NULL, quiet = FALSE,
 	oldNames = TRUE)
