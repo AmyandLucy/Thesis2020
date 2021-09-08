@@ -1,0 +1,377 @@
+---
+title: "Prevalence Analysis"
+author: "Lu Zhang"
+date: "24/09/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Setting up
+## Installing packages 
+```{r}
+# Install packages 
+install.packages(c('lme4', 'lmerTest', 'tidyverse', 'sjstats', 'plotly'))
+```
+
+```{r}
+# library packages
+library('lme4')
+library('lmerTest')
+library('readr')
+library('sjstats')
+library('ggplot2')
+library('dplyr')
+library('plotly')
+library('plyr')
+```
+
+## Read Data
+```{r}
+full.data <- read.csv("full_dataset_statchecked.csv")
+```
+
+## Data cleaning 
+```{r}
+# Removing rows with NA for error 
+full.data <- full.data[complete.cases(full.data[,21]),]
+```
+
+```{r}
+str(full.data)
+```
+
+# Descriptive Statistics
+
+## Proportion of Statistical Reporting Error per Article 
+```{r}
+errorData <- subset(full.data, error == TRUE)
+article.error <- plyr::count(errorData, 'PMCID') 
+n_article.error <- as.integer(nrow(article.error))
+n_article.error
+
+article.total <- dplyr::count(full.data, PMCID)  
+n_article.total <- as.integer(nrow(article.total))
+n_article.total
+
+article.error.prop <- n_article.error/n_article.total
+article.error.prop
+```
+
+## Proportion of Gross Statistical Reporting Error per Article 
+```{r}
+gross.errorData <- subset(full.data, decisionError == TRUE)
+gross.article.error <- plyr::count(gross.errorData, 'PMCID') 
+n_gross.article.error <- as.integer(nrow(gross.article.error))
+n_gross.article.error
+
+#calculate the proportion
+gross.article.error.prop <- n_gross.article.error/n_article.total
+gross.article.error.prop
+```
+
+## Proportion of Statistical Reporting Error Over All NHSTs
+```{r}
+# Proportion of Statistical Reporting Error of all tests
+summary.error <- prop.table(table(full.data$error)) #prop.table turns raw frequency to proportions
+
+summary.grossError <- prop.table(table(full.data$decisionError))
+
+print(summary.error)
+print(summary.grossError)
+```
+
+# Graphs
+
+## Themes
+```{r}
+install.packages("ggsci")
+library("ggsci")
+```
+
+## Number of Articles over the Years 
+
+```{r}
+dplyr::count(full.data,realYear)
+```
+
+
+```{r}
+article.per.year <- full.data %>%
+  dplyr::count(PMCID, realYear)
+  
+#[full.data$realYear >= 1998,] in case we want to ignore data prior to 1998
+graph.article <- ggplot(data = article.per.year[article.per.year$realYear >= 2000,],
+                        aes(realYear)) +
+  geom_histogram(aes(), fill = "orange2", colour = "#374E55FF", binwidth = 1) +
+  xlab("Year") +
+  ylab("Number of Articles") +
+  scale_fill_jama(palette = c("default")) +
+  #xlim(1998, 2018) +
+  scale_x_continuous(breaks = c(2000:2018)) +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1), panel.border = element_blank(), panel.grid.major = element_blank(),
+panel.grid.minor = element_blank(), axis.line = element_line(colour = "black"), panel.background = element_blank())
+
+print(graph.article)
+```
+
+
+## Number of Journals
+```{r}
+dplyr::count(full.data, journalID)
+```
+
+
+## Mean number of NHST per articles over years
+```{r}
+# Group data by mean number of articles per year 
+
+full.data %>%
+  dplyr::group_by(PMCID, realYear) %>% #grouping article by PMCID
+  dplyr::count() %>% #create a frequency table with number of NHST per article 
+  dplyr::group_by(realYear) %>% #group by year
+  dplyr::summarise(av_n=mean(n)) -> mean.per.year #find mean
+
+```
+
+```{r}
+#Scatterplot of mean number of NHSTs per year against Year 
+mean.nhst.graph <- ggplot(mean.per.year, aes(x = realYear, y = av_n))
+mean.nhst.graph <- mean.nhst.graph +
+  geom_point(aes(), colour = "#B24745FF") + 
+  xlab("Year") +
+  ylab("Mean NHSTs Per Article") + 
+  theme(axis.text.x = element_text(hjust = 1)) +
+  scale_color_jama() +
+  scale_y_continuous(breaks = c(0:14)) +
+  scale_x_continuous(breaks = c(1980:2018)) +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1), panel.border = element_blank(), panel.grid.major = element_blank(),
+panel.grid.minor = element_blank(), axis.line = element_line(colour = "black"), panel.background = element_blank())
+
+mean.nhst.graph
+```
+
+
+## Mean number of errors per article per year 
+```{r}
+error_count_by_article <- full.data %>% 
+  dplyr::group_by(realYear,PMCID) %>% 
+  summarise(count = sum(error))
+error_ave_by_year <- error_count_by_article %>%
+  dplyr::group_by(realYear) %>% 
+  summarise(avg = mean(count))
+```
+
+
+## Percentage of Errors per Articles per Year against Years(not working)
+```{r}
+# Group data by mean number of articles per year *I SRSLY DON'T KNOW HOW TO GROUP 
+full.data %>%
+  count("PMCID") -> tests_per_study
+
+full.data %>%
+  count("PMCID", "error") -> errors_per_study
+
+percentage_of_errors <- tibble(
+  PMCID = tests_per_study$PMCID,
+  percent = (errors_per_study$freq / tests_per_study$freq) * 100)
+
+percentage_of_errors <- semi_join(full.data[, c("PMCID", "realYear")], percentage_of_errors, by = "PMCID")
+
+
+```
+
+## Test Statistic Types
+```{r}
+# Proportion of Test statistic type
+test.stat <- prop.table(table(full.data$statistic))
+test.stat
+
+```
+
+```{r}
+print("chitest")
+chitest <- subset(full.data, statistic == 'chi')
+nrow(chitest)
+print(table(chitest$error))
+print(prop.table(table(chitest$error)))
+
+print("ttest")
+ttest <- subset(full.data, statistic == 't')
+nrow(ttest)
+print(table(ttest$error))
+print(prop.table(table(ttest$error)))
+
+print("rtest")
+rtest <- subset(full.data, statistic == 'r')
+nrow(rtest)
+print(table(rtest$error))
+print(prop.table(table(rtest$error)))
+
+print("ftest")
+ftest <- subset(full.data, statistic == 'F')
+nrow(ftest)
+print(table(ftest$error))
+print(prop.table(table(ftest$error)))
+```
+
+```{r}
+print("chitest")
+print(table(chitest$decisionError))
+print(prop.table(table(chitest$decisionError)))
+
+print("ttest")
+print(table(ttest$decisionError))
+print(prop.table(table(ttest$decisionError)))
+
+print("rtest")
+print(table(rtest$decisionError))
+print(prop.table(table(rtest$decisionError)))
+
+print("ftest")
+print(table(ftest$decisionError))
+print(prop.table(table(ftest$decisionError)))
+```
+
+### Graph for Frequency of Test Statistic Type Across Years
+```{r}
+graph.test.type <- ggplot(data = full.data[full.data$realYear >= 2000,],
+                        aes(realYear)) +
+  geom_bar(aes(fill = factor(statistic)), position = "dodge") +
+  xlab("Year") +
+  ylab("Number of Test Statistics") +
+  scale_fill_jama(name = "Test Statistic Type", labels = c("chi-squared", "F", "r", "t")) +
+  scale_x_continuous(breaks = c(2000:2018)) +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1), panel.border = element_blank(), panel.grid.major = element_blank(),
+panel.grid.minor = element_blank(), axis.line = element_line(colour = "black"), panel.background = element_blank())
+
+print(graph.test.type)
+```
+
+
+# Analyses
+
+## Rescale year variable
+```{r}
+full.data$year <- full.data$realYear - 1980
+```
+
+## Regression
+```{r}
+m1.error <- lm("error ~ year + statistic",
+         data = full.data)
+
+summary(m1)
+```
+
+```{r}
+m2.error <- lm("error ~ year ",
+         data = full.data)
+
+summary(m2.error)
+```
+
+
+# LMLM
+```{r}
+m2 <- glmer("error ~ 1 + year + statistic + (1 | journalID)",
+                 data = full.data,
+                 family = binomial(link = "logit"))
+
+summary(m2)
+confint(m2, "beta_", level = 0.95,
+	method = c("profile", "Wald", "boot"),
+	nsim = 500,
+        boot.type = c("perc","basic","norm"),
+        FUN = NULL, quiet = FALSE,
+	oldNames = TRUE)
+```
+
+### Median Odds Ratio
+```{r}
+var <- 0.1234 #random effect variance
+
+install.packages("remotes")
+remotes::install_github("pcdjohnson/GLMMmisc")
+library("GLMMmisc")
+
+mor(var)
+
+```
+
+### Confidence interval for MOR
+```{r}
+t<- ranef(m2,condVar = TRUE)
+
+est<-as.numeric(unlist(t$clientid.x)) #don't really understand this line onwards
+
+var<- as.numeric(unlist(attr(t$clientid.x,"postVar")))
+
+### bootstrap 
+### create empty output collection:
+mor_boot<- c()
+#### iterate over replicates
+for(i in 1:1000){
+### draw vector of area random effects from normal
+drw<- rnorm(n = length(est),mean = est,sd = sqrt(var))
+### create data frame with all possible pairs 
+s<- combn(drw,2)
+#### estimate MOR and save in output
+mor_boot<- c(mor_boot, median(exp(abs(s[1,]- s[2,]))))
+}
+### bootstrap median and 95% CI
+quantile(mor_boot, c(.025,.5,.975))
+```
+
+
+### Median and mean reported p-value
+```{r}
+summary(full.data)
+```
+
+## This section lets you display your model's prediction for various combinations of observed variables
+
+```{r}
+
+intercept_parameter <- fixef(m2)['(Intercept)']
+year_parameter <- fixef(m2)['year']
+statF_parameter <- fixef(m2)['statisticF']
+statr_parameter <- fixef(m2)['statisticr']
+statt_parameter <- fixef(m2)['statistict']
+
+
+# Edit the code section below.
+# In addition to the rules listed below, it's required that a maximum of
+# one of statF/statr/statt be equal to 1. 
+# It's permitted for all of them to equal 0, in which case the statistic
+# is chi-squared.
+
+year <- 20 # Change this to anything from 0 to 20
+statF <- 0 # Make this 0 (not F-stat) or 1 (F-stat)
+statr <- 1 # Make this 0 (not r-stat) or 1 (r-stat)
+statt <- 0 # Make this 0 (not t-stat) or 1 (t-stat)
+
+
+# Get the model's estimated probability of error
+plogis(intercept_parameter + year * year_parameter +
+         statF * statF_parameter + statr * statr_parameter + statt * statt_parameter)
+```
+
+
+```{r}
+
+v <- as.data.frame(VarCorr(m2))[4]
+mor=exp(sqrt(2*v)*qnorm(0.75))
+
+```
+
+```{r}
+
+# Calculate CI for variance of random intercept
+
+variance_random_intercepts <- profile(m2,which="theta_",prof.scale="varcov",signames=FALSE)
+confint(variance_random_intercepts)
+
+```
